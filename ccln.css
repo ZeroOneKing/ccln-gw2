@@ -5,18 +5,39 @@
   --line:rgba(255,157,31,.14); --line2:rgba(255,157,31,.38);
   --txt:#ece7df; --dim:#9d948a;
   --acc:#ff9d1f; --acc2:#ffc46b; --karma:#c78bfa;
+  --vine:#2fa97c;
   --buy:#34d399; --wait:#fbbf24; --opt:#60a5fa; --skip:#f87171;
 }
+::selection{background:rgba(47,169,124,.35);color:#fff}
+::-webkit-scrollbar{width:11px;height:11px}
+::-webkit-scrollbar-track{background:#060606}
+::-webkit-scrollbar-thumb{background:#241d15;border-radius:99px;border:2px solid #060606}
+::-webkit-scrollbar-thumb:hover{background:var(--vine)}
 *{box-sizing:border-box;margin:0;padding:0}
 body{
   color:var(--txt);font:14px/1.45 system-ui,'Segoe UI',sans-serif;min-height:100vh;
   background:
     radial-gradient(1000px 600px at 85% -10%, rgba(255,157,31,.07), transparent 60%),
     radial-gradient(800px 600px at -10% 45%, rgba(255,157,31,.04), transparent 60%),
+    radial-gradient(720px 520px at 6% 104%, rgba(47,169,124,.07), transparent 60%),
+    radial-gradient(640px 460px at 98% 60%, rgba(47,169,124,.05), transparent 60%),
     linear-gradient(180deg,var(--bg0),var(--bg1));
   background-attachment:fixed;
 }
 #bg{position:fixed;inset:0;z-index:-1;pointer-events:none}
+
+/* enredaderas jade en las esquinas */
+body::before, body::after{
+  content:"";position:fixed;z-index:-1;pointer-events:none;
+  width:min(46vmin,430px);height:min(46vmin,430px);
+  background:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 420 420'><g fill='none' stroke='%232fa97c' stroke-width='2.4' stroke-linecap='round'><path d='M14 0 C 26 70 -6 130 30 200 C 58 254 40 320 78 380 C 90 398 104 410 118 418'/><path d='M0 16 C 70 28 130 -4 200 30 C 254 56 320 40 380 76 C 398 88 410 102 418 116'/><path d='M30 200 C 52 196 70 208 78 228'/><path d='M200 30 C 198 52 208 68 228 76'/></g><g fill='%232fa97c'><path d='M26 60 q -18 -6 -26 -22 q 20 -2 26 22 z'/><path d='M18 120 q 16 -12 34 -8 q -12 18 -34 8 z'/><path d='M34 226 q -20 -2 -30 -18 q 22 -6 30 18 z'/><path d='M58 300 q 18 -10 36 -4 q -14 18 -36 4 z'/><path d='M86 368 q -20 0 -32 -14 q 20 -8 32 14 z'/><path d='M64 20 q -6 -18 4 -32 q 12 16 -4 32 z'/><path d='M120 24 q 10 -18 30 -20 q -4 22 -30 20 z'/><path d='M226 44 q 2 -20 18 -30 q 8 20 -18 30 z'/><path d='M300 62 q 12 -16 32 -16 q -6 22 -32 16 z'/><path d='M368 92 q 0 -20 14 -32 q 10 20 -14 32 z'/></g><g fill='none' stroke='%232fa97c' stroke-width='1.6'><circle cx='48' cy='168' r='7'/><circle cx='168' cy='16' r='7'/></g></svg>") no-repeat;
+  background-size:contain;opacity:.20;
+}
+body::before{top:0;left:0;transform-origin:top left;animation:vineTL 14s ease-in-out infinite alternate}
+body::after{bottom:0;right:0;transform-origin:bottom right;animation:vineBR 16s ease-in-out infinite alternate}
+@keyframes vineTL{from{transform:rotate(0deg)}to{transform:rotate(1.6deg)}}
+@keyframes vineBR{from{transform:rotate(180deg)}to{transform:rotate(181.6deg)}}
+@media(max-width:700px){body::before,body::after{opacity:.12;width:56vmin;height:56vmin}}
 
 /* ---------- cabecera ---------- */
 header{display:flex;align-items:center;gap:16px;flex-wrap:wrap;row-gap:8px;padding:12px 20px;
