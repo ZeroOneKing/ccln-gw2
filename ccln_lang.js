@@ -24,6 +24,7 @@
     // capa viva (jefes, bazar, cuenta) y mapa
     if (typeof window.updateLiveLang === 'function') window.updateLiveLang();
     if (typeof window.updateMapLang === 'function') window.updateMapLang();
+    if (typeof window.updateXpacLang === 'function') window.updateXpacLang();
   }
   btn.addEventListener('click', () => {
     lang = lang === 'en' ? 'es' : 'en';

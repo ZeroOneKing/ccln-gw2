@@ -13,6 +13,28 @@ function coins(c){
   return (g? g+'<i class="g">g</i> ':'') + (s? s+'<i class="s">s</i> ':'') + b+'<i class="b">c</i>';
 }
 
+/* sonido de aviso (WebAudio: campana corta de dos tonos, sin archivos) */
+let _ac = null;
+function beep(){
+  try {
+    _ac = _ac || new (window.AudioContext || window.webkitAudioContext)();
+    if (_ac.state === 'suspended') _ac.resume();
+    [[880,0],[1320,.12]].forEach(([f,t]) => {
+      const o = _ac.createOscillator(), g = _ac.createGain(), s = _ac.currentTime + t;
+      o.type = 'sine'; o.frequency.value = f;
+      o.connect(g); g.connect(_ac.destination);
+      g.gain.setValueAtTime(0, s);
+      g.gain.linearRampToValueAtTime(.22, s + .02);
+      g.gain.exponentialRampToValueAtTime(.001, s + .34);
+      o.start(s); o.stop(s + .36);
+    });
+  } catch(e){}
+}
+function fireNotif(title, body, tag){
+  try { new Notification(title, {body, tag, icon:'https://tiles.guildwars2.com/1/1/6/29/28.jpg'}); } catch(e){}
+  beep();
+}
+
 /* ============ JEFES DE MUNDO (horario wiki, UTC) ============ */
 const ROUTE_SET = new Set(['Queensdale','Kessex Hills','Gendarran Fields','Harathi Hinterlands',
   'Bloodtide Coast','Sparkfly Fen','Fireheart Rise','Frostgorge Sound','Plains of Ashford',
@@ -69,12 +91,8 @@ function checkNotifs(spawns){
     const key = b.en + '@' + slot;
     if (wait <= 5 && wait > 0 && !notified.has(key)){
       notified.add(key);
-      try {
-        new Notification('⚔️ ' + (isEn()?b.en:b.es), {
-          body: T(`Empieza en ${Math.ceil(wait)} min — ${b.z}`, `Starts in ${Math.ceil(wait)} min — ${b.z}`),
-          tag: key,
-        });
-      } catch(e){}
+      fireNotif('⚔️ ' + (isEn()?b.en:b.es),
+        T(`Empieza en ${Math.ceil(wait)} min — ${b.z}`, `Starts in ${Math.ceil(wait)} min — ${b.z}`), key);
     }
   }
 }
@@ -94,7 +112,7 @@ function paintBosses(){
     }).join('') +
     `<div class="bfoot">${T('Horario fijo del juego (wiki) · 1 cofre por jefe y día · 🔔 avisos en 👤 Mi cuenta','Fixed in-game schedule (wiki) · 1 chest per boss per day · 🔔 alerts in 👤 My account')}</div>`;
 }
-setInterval(paintBosses, 30000);
+setInterval(paintBosses, 1000);
 
 /* ============ BAZAR AHORA ============ */
 const MATS = [
@@ -288,6 +306,71 @@ function statsHtml(){
     }).join('') : `<div class="dim" style="font-size:12px">${T('Sin stats aún','No stats yet')}</div>`) + `</div>`;
 }
 
+/* ---- almacén: banco, materiales, bolsa del personaje (lazy) ---- */
+const itemCache = {};
+function resolveItems(ids){
+  const need = [...new Set(ids)].filter(id => id && !itemCache[id]);
+  if (!need.length) return Promise.resolve();
+  const chunks = [];
+  for (let i=0; i<need.length; i+=180) chunks.push(need.slice(i, i+180));
+  return Promise.all(chunks.map(c =>
+    fetch(API + '/items?ids=' + c.join(',') + '&lang=' + (isEn()?'en':'es'))
+      .then(r=>r.json()).then(arr => arr.forEach(it => itemCache[it.id] = it)).catch(()=>{})
+  ));
+}
+function gridHtml(entries){
+  // entries: [{id,count}]
+  const rows = entries.filter(e => e && e.id && itemCache[e.id]);
+  if (!rows.length) return `<p class="dim" style="font-size:12px">${T('Vacío.','Empty.')}</p>`;
+  return `<div class="stgrid">` + rows.map(e => {
+    const it = itemCache[e.id];
+    return `<div class="stcell" style="border-color:${RARCOL[it.rarity]||'#555'}" ` +
+      `data-tip="${(it.name||'').replace(/"/g,'&quot;')} ×${e.count} · nv ${it.level||'—'} · ${it.rarity}">` +
+      `<img src="${it.icon}" loading="lazy" alt=""><b>${e.count>1?e.count:''}</b></div>`;
+  }).join('') + `</div>`;
+}
+let stgOpen = null;
+function loadStorage(kind){
+  const box = $$('storageBox');
+  if (!box) return;
+  if (stgOpen === kind){ stgOpen = null; box.innerHTML = ''; renderStgTabs(); return; }
+  stgOpen = kind; renderStgTabs();
+  box.innerHTML = `<p class="dim" style="font-size:12px">${T('Cargando…','Loading…')}</p>`;
+  if (kind === 'mats'){
+    Promise.all([ api('/account/materials'), fetch(API+'/materials').then(r=>r.json()) ])
+      .then(([mats, catIds]) => {
+        const rows = mats.filter(m => m.count > 0);
+        return resolveItems(rows.map(r=>r.item_id)).then(() => {
+          const es = rows.map(r => ({id:r.item_id, count:r.count}));
+          box.innerHTML = `<div class="stcount">${rows.length} ${T('tipos de material · ','material types · ')}${rows.reduce((a,r)=>a+r.count,0).toLocaleString(loc())} ${T('en total','total')}</div>` + gridHtml(es);
+        });
+      }).catch(()=> box.innerHTML = `<p class="dim">${T('No se pudo (¿permiso inventories?)','Failed (inventories permission?)')}</p>`);
+  } else if (kind === 'bank'){
+    api('/account/bank').then(bank => {
+      const rows = (bank||[]).filter(x => x);
+      return resolveItems(rows.map(r=>r.id)).then(() => {
+        box.innerHTML = `<div class="stcount">${rows.length} ${T('objetos en el banco','items in the bank')}</div>` +
+          gridHtml(rows.map(r => ({id:r.id, count:r.count})));
+      });
+    }).catch(()=> box.innerHTML = `<p class="dim">${T('No se pudo (¿permiso inventories?)','Failed (inventories permission?)')}</p>`);
+  } else if (kind === 'bag'){
+    if (!ACC || !ACC.sel){ box.innerHTML=''; return; }
+    api('/characters/' + encodeURIComponent(ACC.sel) + '/inventory').then(inv => {
+      const items = [];
+      (inv.bags||[]).forEach(bag => { if (bag) (bag.inventory||[]).forEach(it => { if (it) items.push({id:it.id, count:it.count}); }); });
+      return resolveItems(items.map(i=>i.id)).then(() => {
+        box.innerHTML = `<div class="stcount">${items.length} ${T('objetos en la bolsa de ','items in ')}${ACC.sel}</div>` + gridHtml(items);
+      });
+    }).catch(()=> box.innerHTML = `<p class="dim">${T('No se pudo (¿permiso inventories?)','Failed (inventories permission?)')}</p>`);
+  }
+}
+function renderStgTabs(){
+  const el = $$('storageTabs');
+  if (!el) return;
+  const t = [['bank','🏦 '+T('Banco','Bank')],['mats','📦 '+T('Materiales','Materials')],['bag','🎒 '+T('Bolsa','Bag')]];
+  el.innerHTML = t.map(([k,l]) => `<button class="stbtn ${stgOpen===k?'on':''}" data-stg="${k}">${l}</button>`).join('');
+}
+
 function fase(lv){
   if (lv < 10)  return T('Fase 1 — arranque: ciudades / zona inicial','Phase 1 — start: cities / starter zone');
   if (lv < 15)  return T('Fase 2 — zonas iniciales + equipo nv 10-15 de corazones','Phase 2 — starter zones + lv 10-15 heart gear');
@@ -361,6 +444,10 @@ function paintAccount(){
         </div>
         <p class="tfoot">${T('Pasa el ratón por cada slot · ⚠ = desfasado 10+ niveles','Hover each slot · ⚠ = 10+ levels outdated')}</p></div>
 
+      <div class="tile wide"><span class="tl">🏦 ${T('Almacén y bolsas — sin entrar al juego','Storage & bags — without opening the game')}</span>
+        <div class="stbtns" id="storageTabs"></div>
+        <div id="storageBox"></div></div>
+
       <div class="tile wide"><span class="tl">🧠 ${T('Consejos AHORA','Advice NOW')}</span><ul class="advice">
         <li>🗺️ ${T('Corazones que puedes hacer: hasta nivel','Hearts you can do: up to level')} <b>${Math.min(80, ch.level+1)}</b></li>
         ${consejoKarma(ch.level, karma, ch.profession)}
@@ -369,8 +456,9 @@ function paintAccount(){
       <button class="applyBtn" id="applyChar">🎯 ${T('Aplicar mi nivel y clase al buscador','Apply my level & class to the finder')}</button></div>
     </div>`;
 
+  renderStgTabs();
   const sel = $$('charSel');
-  if (sel) sel.addEventListener('change', e => { ACC.sel = e.target.value; ACC.eq = null; ACC.stats = null; paintAccount(); loadEquip(); });
+  if (sel) sel.addEventListener('change', e => { ACC.sel = e.target.value; ACC.eq = null; ACC.stats = null; stgOpen = null; paintAccount(); loadEquip(); });
   const ap = $$('applyChar');
   if (ap) ap.addEventListener('click', () => {
     achvUnlock('apply');
@@ -398,19 +486,26 @@ function ensureTip(){
   return tipEl;
 }
 document.addEventListener('mouseover', e => {
-  const s = e.target.closest('.eqslot');
-  if (!s || !ACC){ if (tipEl) tipEl.style.display = 'none'; return; }
-  const ch = ACC.chars.find(c => c.name === ACC.sel) || ACC.chars[0];
+  const s = e.target.closest('.eqslot'), c = e.target.closest('.stcell');
   const t = ensureTip();
-  t.innerHTML = eqTipHtml(s.dataset.slot, ch);
+  if (s && ACC){
+    const ch = ACC.chars.find(x => x.name === ACC.sel) || ACC.chars[0];
+    t.innerHTML = eqTipHtml(s.dataset.slot, ch);
+  } else if (c){
+    t.innerHTML = c.dataset.tip.replace(/ · /g, '<br>');
+  } else { t.style.display = 'none'; return; }
+  const anchor = s || c;
   t.style.display = 'block';
-  const r = s.getBoundingClientRect();
-  const w = t.offsetWidth;
+  const r = anchor.getBoundingClientRect(), w = t.offsetWidth;
   t.style.left = Math.max(8, Math.min(window.innerWidth - w - 8, r.left + r.width/2 - w/2)) + 'px';
   t.style.top = (r.top + window.scrollY - t.offsetHeight - 10) + 'px';
 });
 document.addEventListener('mouseout', e => {
-  if (e.target.closest && e.target.closest('.eqslot') && tipEl) tipEl.style.display = 'none';
+  if (e.target.closest && (e.target.closest('.eqslot') || e.target.closest('.stcell')) && tipEl) tipEl.style.display = 'none';
+});
+document.addEventListener('click', e => {
+  const b = e.target.closest('.stbtn');
+  if (b) loadStorage(b.dataset.stg);
 });
 
 /* ---- formulario ---- */
@@ -430,12 +525,19 @@ document.addEventListener('change', e => {
   if (e.target.id === 'notifChk'){
     if (e.target.checked){
       try { localStorage.setItem('ccln-notif','1'); } catch(err){}
+      const test = () => {
+        if ('Notification' in window && Notification.permission === 'granted')
+          fireNotif('🔔 CCLN-GW2', T('¡Avisos activados! Sonarán 5 min antes de los jefes de tu ruta.','Alerts on! You will be pinged 5 min before your route bosses.'), 'ccln-test');
+        else beep();  // al menos suena de prueba
+        paintNotifState();
+      };
       if ('Notification' in window && Notification.permission !== 'granted')
-        Notification.requestPermission().then(paintNotifState);
+        Notification.requestPermission().then(test);
+      else test();
     } else {
       try { localStorage.setItem('ccln-notif','0'); } catch(err){}
+      paintNotifState();
     }
-    paintNotifState();
   }
 });
 

@@ -69,9 +69,9 @@ function tipHtml(z){
   if (z === "Lion's Arch")
     h += `<div class="zwp">🌀 ${T('Nexo: portales asura a TODAS las capitales','Hub: asura gates to ALL capitals')}</div>`;
   const wp = STARTWP[z];
-  if (wp) h += `<div class="zwp">📍 ${T('TP inicial','Starting waypoint')}: <b>${isEn()?wp.en:wp.es}</b><br>` +
-    T(`junto a la puerta de ${wp.city} — lo tienes al crear un ${wp.race.es}`,
-      `by the ${wp.city} gate — unlocked when you create a ${wp.race.en}`) + `</div>`;
+  if (wp) h += `<div class="zwp">📍 ${T('TP para entrar','Waypoint to enter')}: <b>${isEn()?wp.en:wp.es}</b><br>` +
+    T(`junto a la puerta de ${wp.city} — el punto de ruta más cercano para empezar esta zona`,
+      `by the ${wp.city} gate — the closest waypoint to start this zone`) + `</div>`;
   return h;
 }
 window.updateMapLevel = lv => {
