@@ -19,6 +19,8 @@
     if (typeof renderRes === 'function') renderRes();
     // cambio de gemas
     if (typeof window.updateGemLang === 'function') window.updateGemLang();
+    // contador de visitas
+    if (typeof window.updateVisitLang === 'function') window.updateVisitLang();
   }
   btn.addEventListener('click', () => {
     lang = lang === 'en' ? 'es' : 'en';
