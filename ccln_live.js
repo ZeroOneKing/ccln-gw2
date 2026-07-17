@@ -1,4 +1,4 @@
-/* CCLN-GW2 · capa VIVA: panel de cuenta (API key), alertas de jefes, bazar ahora, logros.
+/* CCLN-GW2 · capa VIVA: cuenta (API key), equipo visual, alertas de jefes (+notificaciones), bazar, logros.
    La API key se guarda SOLO en localStorage del navegador y va directa a api.guildwars2.com. */
 (function(){
 'use strict';
@@ -8,7 +8,6 @@ const isEn = () => document.body.classList.contains('lang-en');
 const T = (es, en) => isEn() ? en : es;
 const loc = () => isEn() ? 'en-US' : 'es-ES';
 
-/* ============ util moneda ============ */
 function coins(c){
   const g = Math.floor(c/10000), s = Math.floor(c%10000/100), b = c%100;
   return (g? g+'<i class="g">g</i> ':'') + (s? s+'<i class="s">s</i> ':'') + b+'<i class="b">c</i>';
@@ -36,21 +35,55 @@ const BOSSES = [
 function nextSpawns(){
   const now = new Date();
   const utcMin = now.getUTCHours()*60 + now.getUTCMinutes() + now.getUTCSeconds()/60;
+  const dayEpoch = Math.floor(now.getTime() / 86400000);
   const list = [];
   for (const b of BOSSES){
     let mins = [];
     if (b.times) mins = b.times;
     else for (let t=b.start; t<1440; t+=b.step) mins.push(t);
     let next = mins.find(m => m > utcMin);
-    let wait = next === undefined ? (1440 - utcMin + mins[0]) : (next - utcMin);
-    list.push({b, wait});
+    let wait, slot;
+    if (next === undefined){ wait = 1440 - utcMin + mins[0]; slot = (dayEpoch+1)*1440 + mins[0]; }
+    else { wait = next - utcMin; slot = dayEpoch*1440 + next; }
+    list.push({b, wait, slot});
   }
   return list.sort((a,c)=>a.wait-c.wait);
 }
+
+/* --- notificaciones de escritorio (activables en Mi cuenta) --- */
+const notified = new Set();
+function notifOn(){ try { return localStorage.getItem('ccln-notif') === '1'; } catch(e){ return false; } }
+function paintNotifState(){
+  const st = $$('notifState'), chk = $$('notifChk');
+  if (!st || !chk) return;
+  chk.checked = notifOn();
+  if (!('Notification' in window)) st.textContent = T('Tu navegador no soporta notificaciones.','Your browser does not support notifications.');
+  else if (!notifOn()) st.textContent = T('Desactivadas.','Off.');
+  else if (Notification.permission === 'granted') st.textContent = T('Activadas: te avisaré 5 min antes de cada jefe de tu ruta (con la web abierta).','On: I will ping you 5 min before each route boss (while the site is open).');
+  else st.textContent = T('Falta el permiso del navegador — vuelve a activar y acepta.','Browser permission missing — toggle again and accept.');
+}
+function checkNotifs(spawns){
+  if (!notifOn() || !('Notification' in window) || Notification.permission !== 'granted') return;
+  for (const {b, wait, slot} of spawns){
+    if (!ROUTE_SET.has(b.z)) continue;
+    const key = b.en + '@' + slot;
+    if (wait <= 5 && wait > 0 && !notified.has(key)){
+      notified.add(key);
+      try {
+        new Notification('⚔️ ' + (isEn()?b.en:b.es), {
+          body: T(`Empieza en ${Math.ceil(wait)} min — ${b.z}`, `Starts in ${Math.ceil(wait)} min — ${b.z}`),
+          tag: key,
+        });
+      } catch(e){}
+    }
+  }
+}
 function paintBosses(){
   const el = $$('bossBox');
+  const spawns = nextSpawns();
+  checkNotifs(spawns);
   if (!el) return;
-  const top = nextSpawns().slice(0,5);
+  const top = spawns.slice(0,5);
   el.innerHTML = `<span class="t">🐉 ${T('Próximos jefes de mundo','Next world bosses')}</span>` +
     top.map(({b,wait}) => {
       const m = Math.floor(wait), s = Math.floor((wait-m)*60);
@@ -59,11 +92,11 @@ function paintBosses(){
       return `<div class="bossrow"><b class="cd">${cd}</b><span>${isEn()?b.en:b.es}</span>` +
              `<span class="bz">${b.z}</span>${ruta}${b.hard?'<i class="rt p">HARD</i>':''}</div>`;
     }).join('') +
-    `<div class="bfoot">${T('Horario fijo del juego (wiki) · 1 cofre por jefe y día','Fixed in-game schedule (wiki) · 1 chest per boss per day')}</div>`;
+    `<div class="bfoot">${T('Horario fijo del juego (wiki) · 1 cofre por jefe y día · 🔔 avisos en 👤 Mi cuenta','Fixed in-game schedule (wiki) · 1 chest per boss per day · 🔔 alerts in 👤 My account')}</div>`;
 }
 setInterval(paintBosses, 30000);
 
-/* ============ BAZAR AHORA (precios TP en vivo) ============ */
+/* ============ BAZAR AHORA ============ */
 const MATS = [
   {id:19697, es:'Mineral de cobre', en:'Copper Ore'},
   {id:19699, es:'Mineral de hierro', en:'Iron Ore'},
@@ -92,7 +125,7 @@ function paintTP(){
     `<p class="tpbest">${T('Ahora mismo lo que mejor paga','Best payer right now')}: <b>${isEn()?best.m.en:best.m.es}</b> (${coins(best.p.buys.unit_price)}/u)</p>` +
     `<div class="tpgrid">` + rows.map(({m,p}) =>
       `<div class="tprow"><span>${isEn()?m.en:m.es}</span><b>${coins(p.buys.unit_price)}</b></div>`).join('') +
-    `</div><div class="bfoot">${T('Precio de venta instantánea, de este preciso instante (API oficial). Se actualiza al recargar.','Instant-sell price, right now (official API). Refreshes on reload.')}</div>`;
+    `</div><div class="bfoot">${T('Precio de venta instantánea, de este preciso instante (API oficial).','Instant-sell price, right now (official API).')}</div>`;
 }
 function loadTP(){
   fetch(API + '/commerce/prices?ids=' + MATS.map(m=>m.id).join(','))
@@ -103,11 +136,11 @@ function loadTP(){
 
 /* ============ LOGROS INTERNOS ============ */
 const ACHV = [
-  {id:'link',  ico:'🔗', es:'Cuenta vinculada',      en:'Account linked',        des:'Conecta tu API key', den:'Connect your API key'},
-  {id:'apply', ico:'🎯', es:'Ruta calibrada',        en:'Route calibrated',      des:'Aplica tu nivel al buscador', den:'Apply your level to the finder'},
-  {id:'karma50',ico:'💜', es:'Ahorrador de karma',   en:'Karma saver',           des:'Acumula 50.000 de karma', den:'Save up 50,000 karma'},
-  {id:'lv80',  ico:'👑', es:'Ochentero',             en:'Level 80 club',         des:'Ten un personaje a nivel 80', den:'Have a level-80 character'},
-  {id:'tabs',  ico:'🧭', es:'Explorador de la web',  en:'Site explorer',         des:'Visita todas las pestañas', den:'Visit every tab'},
+  {id:'link',  ico:'🔗', es:'Cuenta vinculada',     en:'Account linked',   des:'Conecta tu API key', den:'Connect your API key'},
+  {id:'apply', ico:'🎯', es:'Ruta calibrada',       en:'Route calibrated', des:'Aplica tu nivel al buscador', den:'Apply your level to the finder'},
+  {id:'karma50',ico:'💜', es:'Ahorrador de karma',  en:'Karma saver',      des:'Acumula 50.000 de karma', den:'Save up 50,000 karma'},
+  {id:'lv80',  ico:'👑', es:'Ochentero',            en:'Level 80 club',    des:'Ten un personaje a nivel 80', den:'Have a level-80 character'},
+  {id:'tabs',  ico:'🧭', es:'Explorador de la web', en:'Site explorer',    des:'Visita todas las pestañas', den:'Visit every tab'},
 ];
 function achvGet(){ try { return JSON.parse(localStorage.getItem('ccln-achv')||'{}'); } catch(e){ return {}; } }
 function achvUnlock(id){
@@ -122,7 +155,6 @@ function paintAchv(){
     ACHV.map(x => `<div class="achv ${a[x.id]?'on':''}" title="${isEn()?x.den:x.des}">` +
       `<span>${x.ico}</span><b>${isEn()?x.en:x.es}</b></div>`).join('') + `</div>`;
 }
-// logro: visitar todas las pestañas
 const seenTabs = new Set();
 document.addEventListener('click', e => {
   const b = e.target.closest('#mainNav .tab');
@@ -131,21 +163,19 @@ document.addEventListener('click', e => {
   if (seenTabs.size >= document.querySelectorAll('#mainNav .tab').length) achvUnlock('tabs');
 });
 
-/* ============ PANEL DE CUENTA (API key) ============ */
-let ACC = null;   // {name, access, chars:[{name,level,profession}], wallet:{coin,karma,laurel}, sel, eq}
+/* ============ PANEL DE CUENTA ============ */
+let ACC = null;
 window.CCLN_LEVEL = null;
 
 function keyGet(){ try { return localStorage.getItem('ccln-apikey') || ''; } catch(e){ return ''; } }
 function keySet(k){ try { k ? localStorage.setItem('ccln-apikey', k) : localStorage.removeItem('ccln-apikey'); } catch(e){} }
-
 function api(path){
   return fetch(API + path + (path.includes('?') ? '&' : '?') + 'access_token=' + encodeURIComponent(keyGet()))
     .then(r => { if (!r.ok) throw new Error('HTTP '+r.status); return r.json(); });
 }
-
 function accStatus(msg, err){
   const el = $$('accStatus');
-  if (el){ el.textContent = msg; el.style.color = err ? 'var(--skip)' : 'var(--dim)'; }
+  if (el){ el.textContent = msg; el.style.color = err ? 'var(--skip)' : 'var(--vine)'; }
 }
 
 function loadAccount(){
@@ -156,44 +186,107 @@ function loadAccount(){
       const w = {}; wallet.forEach(x => w[x.id] = x.value);
       chars.sort((a,b) => b.level - a.level);
       ACC = { name: acc.name, access: acc.access || [], chars, wallet: w,
-              sel: chars[0] ? chars[0].name : null, eq: null };
+              sel: chars[0] ? chars[0].name : null, eq: null, stats: null };
       achvUnlock('link');
       if ((w[2]||0) >= 50000) achvUnlock('karma50');
       if (chars.some(c => c.level >= 80)) achvUnlock('lv80');
-      // modo F2P/P2P automático según la cuenta
       const p2p = ACC.access.some(a => a !== 'PlayForFree' && a !== 'None');
       try { localStorage.setItem('ccln-mode', p2p ? 'p2p' : 'f2p'); } catch(e){}
       document.body.classList.remove('f2p','p2p');
       document.body.classList.add(p2p ? 'p2p' : 'f2p');
       const mb = $$('modeBtn'); if (mb) mb.textContent = p2p ? '💎 P2P' : '🆓 F2P';
-      accStatus('');
+      accStatus('✓ ' + T('Conectado como','Connected as') + ' ' + acc.name + ' · ' + T('clave recordada en este navegador','key remembered in this browser'));
       paintAccount();
       loadEquip();
     })
     .catch(() => { accStatus(T('Clave rechazada o sin permisos (necesita: account, characters, wallet, inventories)','Key rejected or missing permissions (needs: account, characters, wallet, inventories)'), true); });
 }
 
+/* ---- equipo visual estilo juego ---- */
+const RARCOL = {Junk:'#aaa',Basic:'#fff',Fine:'#62a4da',Masterwork:'#3ba51e',Rare:'#fcd00b',
+                Exotic:'#ffa405',Ascended:'#fb3e8d',Legendary:'#a63cf9'};
+const SLOTS_L = ['Helm','Shoulders','Coat','Gloves','Leggings','Boots'];
+const SLOTS_R = ['Backpack','Accessory1','Accessory2','Amulet','Ring1','Ring2'];
+const SLOTS_W = ['WeaponA1','WeaponA2','WeaponB1','WeaponB2'];
+const SLOT_TXT = {
+  Helm:{es:'Casco',en:'Helm'},Shoulders:{es:'Hombros',en:'Shoulders'},Coat:{es:'Pecho',en:'Chest'},
+  Gloves:{es:'Guantes',en:'Gloves'},Leggings:{es:'Perneras',en:'Leggings'},Boots:{es:'Botas',en:'Boots'},
+  Backpack:{es:'Espalda',en:'Back'},Accessory1:{es:'Accesorio 1',en:'Accessory 1'},Accessory2:{es:'Accesorio 2',en:'Accessory 2'},
+  Amulet:{es:'Amuleto',en:'Amulet'},Ring1:{es:'Anillo 1',en:'Ring 1'},Ring2:{es:'Anillo 2',en:'Ring 2'},
+  WeaponA1:{es:'Arma A · mano hábil',en:'Weapon A · main'},WeaponA2:{es:'Arma A · torpe',en:'Weapon A · off'},
+  WeaponB1:{es:'Arma B · mano hábil',en:'Weapon B · main'},WeaponB2:{es:'Arma B · torpe',en:'Weapon B · off'},
+};
+const ATTR_TXT = {Power:{es:'Potencia',en:'Power'},Precision:{es:'Precisión',en:'Precision'},
+  Toughness:{es:'Dureza',en:'Toughness'},Vitality:{es:'Vitalidad',en:'Vitality'},
+  CritDamage:{es:'Ferocidad',en:'Ferocity'},ConditionDamage:{es:'Daño de condición',en:'Condition Damage'},
+  Healing:{es:'Poder de curación',en:'Healing Power'},BoonDuration:{es:'Concentración',en:'Concentration'}};
+const PROF_ICO = {Guardian:'🛡️',Warrior:'⚔️',Engineer:'🔧',Ranger:'🏹',Thief:'🗡️',
+  Elementalist:'🔥',Necromancer:'💀',Mesmer:'🦋',Revenant:'⚡'};
+
 function loadEquip(){
   if (!ACC || !ACC.sel) return;
   api('/characters/' + encodeURIComponent(ACC.sel) + '/equipment')
     .then(eq => {
-      const ids = [...new Set((eq.equipment||[]).map(e => e.id))].slice(0, 60);
-      if (!ids.length){ ACC.eq = []; paintAccount(); return; }
+      const ids = [...new Set((eq.equipment||[]).map(e => e.id))].slice(0, 80);
+      if (!ids.length){ ACC.eq = {}; ACC.stats = {}; paintAccount(); return; }
       return fetch(API + '/items?ids=' + ids.join(',') + '&lang=' + (isEn()?'en':'es'))
         .then(r=>r.json())
         .then(items => {
           const byId = {}; items.forEach(i => byId[i.id] = i);
-          ACC.eq = (eq.equipment||[])
-            .filter(e => byId[e.id] && ['WeaponA1','WeaponA2','WeaponB1','WeaponB2','Helm','Shoulders','Coat','Gloves','Leggings','Boots','Amulet','Ring1','Ring2','Accessory1','Accessory2','Backpack'].includes(e.slot))
-            .map(e => ({slot: e.slot, name: byId[e.id].name, level: byId[e.id].level}));
+          const slots = {}, stats = {}; let defense = 0;
+          (eq.equipment||[]).forEach(e => {
+            const it = byId[e.id];
+            if (!it) return;
+            slots[e.slot] = it;
+            const det = it.details || {};
+            if (det.defense) defense += det.defense;
+            ((det.infix_upgrade||{}).attributes||[]).forEach(a => {
+              stats[a.attribute] = (stats[a.attribute]||0) + a.modifier;
+            });
+          });
+          ACC.eq = slots; ACC.stats = {attrs: stats, defense};
           paintAccount();
         });
     }).catch(()=>{});
 }
 
-const SLOT_ES = {WeaponA1:'Arma A1',WeaponA2:'Arma A2',WeaponB1:'Arma B1',WeaponB2:'Arma B2',Helm:'Casco',
-  Shoulders:'Hombros',Coat:'Pecho',Gloves:'Guantes',Leggings:'Perneras',Boots:'Botas',Amulet:'Amuleto',
-  Ring1:'Anillo 1',Ring2:'Anillo 2',Accessory1:'Accesorio 1',Accessory2:'Accesorio 2',Backpack:'Espalda'};
+function slotHtml(slot, ch){
+  const it = ACC.eq ? ACC.eq[slot] : null;
+  const stxt = SLOT_TXT[slot] ? (isEn()?SLOT_TXT[slot].en:SLOT_TXT[slot].es) : slot;
+  if (!it) return `<div class="eqslot empty" data-slot="${slot}" data-tip="${stxt} — ${T('vacío','empty')}"><span>·</span></div>`;
+  const old = ch.level < 80 && it.level > 0 && it.level <= ch.level - 10;
+  return `<div class="eqslot ${old?'old':''}" data-slot="${slot}" style="border-color:${RARCOL[it.rarity]||'#666'}">` +
+    `<img src="${it.icon}" alt="">${old?'<i class="warn">⚠</i>':''}</div>`;
+}
+function eqTipHtml(slot, ch){
+  const stxt = SLOT_TXT[slot] ? (isEn()?SLOT_TXT[slot].en:SLOT_TXT[slot].es) : slot;
+  const it = ACC.eq ? ACC.eq[slot] : null;
+  if (!it) return `<b>${stxt}</b><br><span class="dim">${T('Slot vacío','Empty slot')}</span>`;
+  const det = it.details || {};
+  let h = `<b style="color:${RARCOL[it.rarity]||'#fff'}">${it.name}</b>` +
+    `<div class="dim">${stxt} · nv ${it.level||'—'} · ${it.rarity}</div>`;
+  if (det.min_power) h += `<div>⚔ ${T('Daño','Damage')}: ${det.min_power}–${det.max_power}</div>`;
+  if (det.defense)  h += `<div>🛡 ${T('Defensa','Defense')}: ${det.defense}</div>`;
+  (((det.infix_upgrade)||{}).attributes||[]).forEach(a => {
+    const at = ATTR_TXT[a.attribute]; h += `<div class="stat">+${a.modifier} ${at?(isEn()?at.en:at.es):a.attribute}</div>`;
+  });
+  const desc = (it.description||'').replace(/<[^>]*>/g,'').trim();
+  if (desc) h += `<div class="desc">${desc.slice(0,180)}</div>`;
+  const old = ch.level < 80 && it.level > 0 && it.level <= ch.level - 10;
+  if (old) h += `<div class="warn2">⚠ ${T('Desfasado: '+(ch.level-it.level)+' niveles por detrás — mira 🛒','Outdated: '+(ch.level-it.level)+' levels behind — check 🛒')}</div>`;
+  return h;
+}
+function statsHtml(){
+  if (!ACC.stats) return '';
+  const st = ACC.stats.attrs || {};
+  const keys = Object.keys(st).sort((a,b)=>st[b]-st[a]);
+  return `<div class="eqstats"><span class="tl">${T('Bonus del equipo','Gear bonuses')}</span>` +
+    (ACC.stats.defense ? `<div class="strow"><span>🛡 ${T('Defensa','Defense')}</span><b>${ACC.stats.defense}</b></div>` : '') +
+    (keys.length ? keys.map(k => {
+      const at = ATTR_TXT[k];
+      return `<div class="strow"><span>${at?(isEn()?at.en:at.es):k}</span><b>+${st[k]}</b></div>`;
+    }).join('') : `<div class="dim" style="font-size:12px">${T('Sin stats aún','No stats yet')}</div>`) + `</div>`;
+}
 
 function fase(lv){
   if (lv < 10)  return T('Fase 1 — arranque: ciudades / zona inicial','Phase 1 — start: cities / starter zone');
@@ -203,7 +296,6 @@ function fase(lv){
   if (lv < 80)  return T('Fase 5 — remate: Fireheart → Frostgorge','Phase 5 — finish: Fireheart → Frostgorge');
   return T('¡Nivel 80! → pestaña 🏔️ y a farmear (💰)','Level 80! → 🏔️ tab and start farming (💰)');
 }
-
 function consejoKarma(lv, karma, prof){
   if (typeof DATA === 'undefined') return '';
   const cls = (prof||'').toLowerCase();
@@ -231,7 +323,9 @@ function paintAccount(){
   const box = $$('accBox');
   if (!box) return;
   const key = keyGet();
-  $$('apiKeyInput').value = key ? '••••••••••••' + key.slice(-6) : '';
+  const inp = $$('apiKeyInput');
+  if (inp) inp.value = key ? '••••••••••••' + key.slice(-6) : '';
+  if (key && !ACC) accStatus('✓ ' + T('Clave recordada en este navegador — conectando…','Key remembered in this browser — connecting…'));
   if (!key || !ACC){ box.style.display = 'none'; return; }
   box.style.display = '';
   const ch = ACC.chars.find(c => c.name === ACC.sel) || ACC.chars[0];
@@ -240,17 +334,6 @@ function paintAccount(){
   if (typeof window.updateMapLevel === 'function') window.updateMapLevel(ch.level);
   const karma = ACC.wallet[2] || 0, oro = ACC.wallet[1] || 0, laur = ACC.wallet[3] || 0;
   const pct = Math.min(100, ch.level / 80 * 100);
-
-  let eqHtml = '';
-  if (ACC.eq && ACC.eq.length){
-    const old = ACC.eq.filter(e => e.level > 0 && e.level <= ch.level - 10 && ch.level < 80);
-    eqHtml = `<div class="tile wide"><span class="tl">🛡️ ${T('Equipo del personaje','Character gear')}</span>` +
-      (old.length
-        ? `<p>${T('Slots desfasados (10+ niveles por detrás)','Outdated slots (10+ levels behind)')}:</p>` +
-          old.map(e => `<div class="eqrow"><span>${SLOT_ES[e.slot]||e.slot}</span><b>${e.name}</b><i>nv ${e.level} vs ${ch.level}</i></div>`).join('') +
-          `<p class="tfoot">→ ${T('búscalos en 🛒 con tus filtros','look them up in 🛒 with your filters')}</p>`
-        : `<p>${T('Sin slots desfasados: equipo al día. 👌','No outdated slots: gear is current. 👌')}</p>`) + `</div>`;
-  }
 
   box.innerHTML =
     `<div class="tiles">
@@ -264,17 +347,30 @@ function paintAccount(){
       <div class="tile wide"><span class="tl">🛤️ ${T('Camino al 80','Road to 80')}</span>
         <div class="cbar big"><div class="cfill" style="width:${pct}%"></div></div>
         <p><b>${ch.level}</b>/80 · ${fase(ch.level)}</p></div>
-      ${eqHtml}
+
+      <div class="tile wide"><span class="tl">🛡️ ${T('Equipo de','Gear of')} ${ch.name}</span>
+        <div class="paperdoll">
+          ${statsHtml()}
+          <div class="dollmid">
+            <div class="dollcol">${SLOTS_L.map(s=>slotHtml(s,ch)).join('')}</div>
+            <div class="dollchar"><span class="dico">${PROF_ICO[ch.profession]||'🧝'}</span>
+              <b>${ch.name}</b><span class="dim">${ch.profession} · nv ${ch.level}</span></div>
+            <div class="dollcol">${SLOTS_R.map(s=>slotHtml(s,ch)).join('')}</div>
+          </div>
+          <div class="dollweap">${SLOTS_W.map(s=>slotHtml(s,ch)).join('')}</div>
+        </div>
+        <p class="tfoot">${T('Pasa el ratón por cada slot · ⚠ = desfasado 10+ niveles','Hover each slot · ⚠ = 10+ levels outdated')}</p></div>
+
       <div class="tile wide"><span class="tl">🧠 ${T('Consejos AHORA','Advice NOW')}</span><ul class="advice">
         <li>🗺️ ${T('Corazones que puedes hacer: hasta nivel','Hearts you can do: up to level')} <b>${Math.min(80, ch.level+1)}</b></li>
         ${consejoKarma(ch.level, karma, ch.profession)}
-        <li>🐉 ${T('Mira los próximos jefes en 🏠 — cofre diario asegurado','Check upcoming bosses in 🏠 — guaranteed daily chest')}</li>
+        <li>🐉 ${T('Próximos jefes en 🏠 · activa los avisos 🔔 arriba','Upcoming bosses in 🏠 · enable 🔔 alerts above')}</li>
       </ul>
       <button class="applyBtn" id="applyChar">🎯 ${T('Aplicar mi nivel y clase al buscador','Apply my level & class to the finder')}</button></div>
     </div>`;
 
   const sel = $$('charSel');
-  if (sel) sel.addEventListener('change', e => { ACC.sel = e.target.value; ACC.eq = null; paintAccount(); loadEquip(); });
+  if (sel) sel.addEventListener('change', e => { ACC.sel = e.target.value; ACC.eq = null; ACC.stats = null; paintAccount(); loadEquip(); });
   const ap = $$('applyChar');
   if (ap) ap.addEventListener('click', () => {
     achvUnlock('apply');
@@ -292,22 +388,58 @@ function paintAccount(){
   });
 }
 
-/* eventos del formulario */
+/* ---- tooltip del equipo ---- */
+let tipEl = null;
+function ensureTip(){
+  if (tipEl) return tipEl;
+  tipEl = document.createElement('div');
+  tipEl.id = 'eqtip';
+  document.body.appendChild(tipEl);
+  return tipEl;
+}
+document.addEventListener('mouseover', e => {
+  const s = e.target.closest('.eqslot');
+  if (!s || !ACC){ if (tipEl) tipEl.style.display = 'none'; return; }
+  const ch = ACC.chars.find(c => c.name === ACC.sel) || ACC.chars[0];
+  const t = ensureTip();
+  t.innerHTML = eqTipHtml(s.dataset.slot, ch);
+  t.style.display = 'block';
+  const r = s.getBoundingClientRect();
+  const w = t.offsetWidth;
+  t.style.left = Math.max(8, Math.min(window.innerWidth - w - 8, r.left + r.width/2 - w/2)) + 'px';
+  t.style.top = (r.top + window.scrollY - t.offsetHeight - 10) + 'px';
+});
+document.addEventListener('mouseout', e => {
+  if (e.target.closest && e.target.closest('.eqslot') && tipEl) tipEl.style.display = 'none';
+});
+
+/* ---- formulario ---- */
 document.addEventListener('click', e => {
-  if (e.target.id === 'apiKeySave'){
+  if (e.target.id === 'apiKeySave' || (e.target.closest && e.target.closest('#apiKeySave'))){
     const v = $$('apiKeyInput').value.trim();
     if (v && !v.startsWith('••')){ keySet(v); ACC = null; loadAccount(); }
   }
-  if (e.target.id === 'apiKeyClear'){
+  if (e.target.id === 'apiKeyClear' || (e.target.closest && e.target.closest('#apiKeyClear'))){
     keySet(''); ACC = null; window.CCLN_LEVEL = null;
-    $$('apiKeyInput').value = ''; accStatus(T('Clave borrada de este navegador.','Key removed from this browser.'));
+    if ($$('apiKeyInput')) $$('apiKeyInput').value = '';
+    accStatus(T('Clave borrada de este navegador.','Key removed from this browser.'));
     paintAccount();
   }
 });
+document.addEventListener('change', e => {
+  if (e.target.id === 'notifChk'){
+    if (e.target.checked){
+      try { localStorage.setItem('ccln-notif','1'); } catch(err){}
+      if ('Notification' in window && Notification.permission !== 'granted')
+        Notification.requestPermission().then(paintNotifState);
+    } else {
+      try { localStorage.setItem('ccln-notif','0'); } catch(err){}
+    }
+    paintNotifState();
+  }
+});
 
-/* re-pintado al cambiar idioma */
-window.updateLiveLang = function(){ paintBosses(); paintTP(); paintAchv(); paintAccount(); };
+window.updateLiveLang = function(){ paintBosses(); paintTP(); paintAchv(); paintNotifState(); if (ACC && ACC.eq){ loadEquip(); } paintAccount(); };
 
-/* init */
-paintBosses(); loadTP(); paintAchv(); loadAccount();
+paintBosses(); loadTP(); paintAchv(); paintNotifState(); loadAccount();
 })();
