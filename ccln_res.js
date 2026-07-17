@@ -15,6 +15,7 @@ const RES = [
  {n:'Discretize', u:'https://discretize.eu', d:'Fractales (de básico a CM)', de:'Fractals (basic to CM)', c:'builds', t:'fp'},
  {n:'Healing in GW2', u:'https://healingingw2.com', d:'Guías de sanador', de:'Healer build guides', c:'builds', t:'p'},
  {n:'Metaforge', u:'https://metaforge.app', d:'Planificador de legendarias', de:'Legendary planner', c:'builds', t:'p'},
+ {n:'True Farming', u:'https://www.true-farming.com', d:'Trenes de farmeo diarios, timers y bot de Discord', de:'Daily farm trains, timers and a Discord bot', c:'oro', t:'fp', s:1},
  {n:'FAST Farming', u:'https://fast.farming-community.eu', d:'Farms de oro (Silverwastes a 80)', de:'Gold farms (Silverwastes to 80)', c:'oro', t:'fp', s:1},
  {n:'GW2 Nodes', u:'https://gw2nodes.com', d:'Mapas de nodos de recursos', de:'Resource node maps', c:'oro', t:'fp', s:1},
  {n:'GW2 Timer', u:'http://gw2timer.com', d:'Jefes de mundo y metas con reloj', de:'World bosses & metas with timers', c:'mapa', t:'fp', s:1},

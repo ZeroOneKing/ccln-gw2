@@ -39,6 +39,31 @@ body::after{bottom:0;right:0;transform-origin:bottom right;animation:vineBR 16s 
 @keyframes vineBR{from{transform:rotate(180deg)}to{transform:rotate(181.6deg)}}
 @media(max-width:700px){body::before,body::after{opacity:.12;width:56vmin;height:56vmin}}
 
+/* enredaderas extra: zarcillo lateral en pantallas anchas */
+html::before{
+  content:"";position:fixed;z-index:-1;pointer-events:none;top:14vh;right:6px;width:26px;height:64vh;
+  background:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 26 160'><g fill='none' stroke='%232fa97c' stroke-width='1.8' stroke-linecap='round'><path d='M13 0 C 20 24 6 40 13 64 C 20 88 6 104 13 128 C 17 142 13 152 13 160'/></g><g fill='%232fa97c'><path d='M13 30 q 12 -6 20 2 q -10 10 -20 -2 z'/><path d='M13 82 q -12 -6 -20 2 q 10 10 20 -2 z'/><path d='M13 134 q 12 -6 20 2 q -10 10 -20 -2 z'/></g><circle cx='7' cy='56' r='4' fill='none' stroke='%232fa97c' stroke-width='1.4'/><circle cx='19' cy='108' r='4' fill='none' stroke='%232fa97c' stroke-width='1.4'/></svg>") repeat-y;
+  background-size:26px 160px;opacity:.14;
+}
+@media(max-width:1100px){html::before{display:none}}
+
+/* divisor floral bajo los títulos de sección */
+.wrap h2::after{
+  content:"";display:block;width:190px;height:14px;margin-top:7px;
+  background:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 190 14'><path d='M2 8 C 40 2 80 12 118 7 C 148 3 170 8 188 6' fill='none' stroke='%232fa97c' stroke-width='1.6' stroke-linecap='round'/><path d='M36 7 q 8 -8 18 -6 q -6 10 -18 6 z' fill='%232fa97c'/><path d='M96 8 q -8 -8 -18 -6 q 6 10 18 6 z' fill='%232fa97c'/><path d='M148 6 q 8 -7 16 -5 q -5 9 -16 5 z' fill='%232fa97c'/><circle cx='120' cy='7' r='2.4' fill='%232fa97c'/></svg>") no-repeat;
+  background-size:contain;opacity:.55;
+}
+
+/* brotes en las esquinas del contador */
+.counter{position:relative}
+.counter::before,.counter::after{
+  content:"";position:absolute;width:54px;height:54px;pointer-events:none;opacity:.5;
+  background:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 54 54'><path d='M4 50 C 10 30 8 16 24 6' fill='none' stroke='%232fa97c' stroke-width='2' stroke-linecap='round'/><path d='M14 26 q 12 -8 22 -2 q -10 12 -22 2 z' fill='%232fa97c'/><path d='M24 6 q 10 -6 18 0 q -8 10 -18 0 z' fill='%232fa97c'/></svg>") no-repeat;
+  background-size:contain;
+}
+.counter::before{top:-12px;left:-12px}
+.counter::after{bottom:-12px;right:-12px;transform:rotate(180deg)}
+
 /* ---------- cabecera ---------- */
 header{display:flex;align-items:center;gap:16px;flex-wrap:wrap;row-gap:8px;padding:12px 20px;
   border-bottom:1px solid var(--line);position:sticky;top:0;z-index:20;
@@ -274,6 +299,57 @@ body.lang-es .en{display:none}
 .rt.f{background:rgba(52,211,153,.13);color:var(--buy)}
 .rt.p{background:rgba(199,139,250,.14);color:var(--karma)}
 .rt.c{background:rgba(255,255,255,.05);color:var(--dim)}
+
+/* ---- capa viva: jefes, bazar, cuenta, mapa ---- */
+.bossbox,.tpbox{display:block}
+.bossbox .t,.tpbox .t{display:block;font-weight:700;margin-bottom:8px}
+.bossrow{display:flex;gap:10px;align-items:center;padding:4px 0;border-bottom:1px solid var(--line);font-size:13px}
+.bossrow:last-of-type{border-bottom:none}
+.bossrow .cd{min-width:74px;color:var(--acc);font-variant-numeric:tabular-nums}
+.bossrow .bz{color:var(--dim);font-size:11.5px;margin-left:auto}
+.bfoot{margin-top:8px;color:var(--dim);font-size:11px}
+.tpbest{font-size:13px;margin-bottom:8px}
+.tpgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:4px 16px}
+.tprow{display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0;border-bottom:1px dashed var(--line)}
+.tprow b,.tile b{font-variant-numeric:tabular-nums}
+i.g{color:#ffc46b;font-style:normal;font-size:10px}
+i.s{color:#c8ccd4;font-style:normal;font-size:10px}
+i.b{color:#c08a5a;font-style:normal;font-size:10px}
+.apirow{display:flex;gap:8px;flex-wrap:wrap}
+.apirow input{flex:1;min-width:220px;background:rgba(16,13,10,.9);border:1px solid var(--line);
+  border-radius:9px;color:var(--txt);padding:9px 12px;font-size:13px;font-family:inherit}
+.apirow input:focus{outline:1px solid var(--acc)}
+.applyBtn{background:linear-gradient(90deg,var(--acc),var(--acc2));color:#1a1206;border:none;
+  border-radius:99px;padding:9px 16px;font-weight:800;font-size:13px;cursor:pointer;font-family:inherit}
+.applyBtn:hover{filter:brightness(1.08)}
+.ghostBtn{background:transparent;color:var(--dim);border:1px solid var(--line);border-radius:99px;
+  padding:9px 14px;font-size:13px;cursor:pointer;font-family:inherit}
+.ghostBtn:hover{color:var(--skip);border-color:var(--skip)}
+.tfoot{color:var(--dim);font-size:11.5px;margin-top:8px}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px;margin-bottom:10px}
+.tile{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:13px 15px}
+.tile.wide{grid-column:1/-1}
+.tile .tl{display:block;font-size:10.5px;color:var(--dim);text-transform:uppercase;letter-spacing:.7px;margin-bottom:5px;font-weight:700}
+.tile b{font-size:16px}
+.tile p{color:#c2b8ab;font-size:12.3px;margin-top:4px}
+.tile select{width:100%;min-width:0}
+.cbar.big{height:14px;margin:6px 0}
+.advice{padding-left:2px}
+.advice li{list-style:none;color:#c2b8ab;font-size:13px;padding:4px 0;border-bottom:1px dashed var(--line)}
+.advice li:last-child{border-bottom:none}
+.eqrow{display:flex;gap:10px;align-items:baseline;font-size:12.5px;padding:2px 0}
+.eqrow span{color:var(--dim);min-width:90px}
+.eqrow i{color:var(--wait);font-style:normal;margin-left:auto;font-size:11.5px}
+.achvgrid{display:flex;flex-wrap:wrap;gap:8px}
+.achv{display:flex;gap:8px;align-items:center;background:rgba(0,0,0,.4);border:1px solid var(--line);
+  border-radius:99px;padding:6px 13px;font-size:12.5px;filter:grayscale(1);opacity:.45}
+.achv.on{filter:none;opacity:1;border-color:rgba(47,169,124,.5)}
+#gwmapWrap{margin:4px 0 18px}
+#gwmap{height:420px;border-radius:14px;border:1px solid var(--line2);background:#000}
+.maplegendbox{margin-top:8px;color:var(--dim);font-size:11.5px;display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+.maplegendbox i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px;vertical-align:-1px}
+.leaflet-container{font:inherit}
+.leaflet-tooltip{background:rgba(10,8,6,.92);color:var(--txt);border:1px solid var(--line2);border-radius:8px}
 
 footer{padding:16px 20px 34px;color:var(--dim);font-size:11.5px}
 @media(max-width:820px){aside{display:none}}

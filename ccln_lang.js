@@ -21,6 +21,9 @@
     if (typeof window.updateGemLang === 'function') window.updateGemLang();
     // contador de visitas
     if (typeof window.updateVisitLang === 'function') window.updateVisitLang();
+    // capa viva (jefes, bazar, cuenta) y mapa
+    if (typeof window.updateLiveLang === 'function') window.updateLiveLang();
+    if (typeof window.updateMapLang === 'function') window.updateMapLang();
   }
   btn.addEventListener('click', () => {
     lang = lang === 'en' ? 'es' : 'en';
