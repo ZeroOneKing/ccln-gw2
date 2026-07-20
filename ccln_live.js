@@ -30,8 +30,22 @@ function beep(){
     });
   } catch(e){}
 }
+/* service worker: notificaciones de sistema (sobreviven a la pestaña en segundo plano) */
+let swReg = null;
+if ('serviceWorker' in navigator){
+  navigator.serviceWorker.register('sw.js').then(r => { swReg = r; }).catch(()=>{});
+}
+const NICON = 'https://render.guildwars2.com/file/9A29B75E9E0C1C61B4B1CF1FEC0A93D0B0C4F4E0/62653.png';
 function fireNotif(title, body, tag){
-  try { new Notification(title, {body, tag, icon:'https://tiles.guildwars2.com/1/1/6/29/28.jpg'}); } catch(e){}
+  const opts = {body, tag, icon:NICON, requireInteraction:true, silent:false};
+  // 1) vía service worker (nivel sistema, más fiable con la pestaña en segundo plano)
+  if (swReg && swReg.active){
+    swReg.active.postMessage({type:'notify', title, body, tag, icon:NICON, url:location.href});
+  } else if (swReg && swReg.showNotification){
+    try { swReg.showNotification(title, opts); } catch(e){ try { new Notification(title, opts); } catch(e2){} }
+  } else {
+    try { new Notification(title, opts); } catch(e){}
+  }
   beep();
 }
 
@@ -81,7 +95,11 @@ function paintNotifState(){
   chk.checked = notifOn();
   if (!('Notification' in window)) st.textContent = T('Tu navegador no soporta notificaciones.','Your browser does not support notifications.');
   else if (!notifOn()) st.textContent = T('Desactivadas.','Off.');
-  else if (Notification.permission === 'granted') st.textContent = T('Activadas: te avisaré 5 min antes de cada jefe de tu ruta (con la web abierta).','On: I will ping you 5 min before each route boss (while the site is open).');
+  else if (Notification.permission === 'granted') st.innerHTML = T(
+    '✓ Activadas: aviso 5 min antes de cada jefe de tu ruta (deja esta pestaña abierta).<br>' +
+    '<b>Si juegas y no te salen:</b> Windows silencia los avisos con juegos a pantalla completa. Solución: pon GW2 en <b>ventana sin bordes</b> y desactiva <b>Asistente de concentración</b> (Configuración → Sistema → Asistente de concentración → Desactivado, y quita «Cuando juego a un juego»).',
+    '✓ On: ping 5 min before each route boss (keep this tab open).<br>' +
+    '<b>If you get none while playing:</b> Windows mutes alerts during fullscreen games. Fix: run GW2 in <b>windowed fullscreen (borderless)</b> and turn off <b>Focus assist</b> (Settings → System → Focus assist → Off, and uncheck "When I\'m playing a game").');
   else st.textContent = T('Falta el permiso del navegador — vuelve a activar y acepta.','Browser permission missing — toggle again and accept.');
 }
 function checkNotifs(spawns){
@@ -89,7 +107,7 @@ function checkNotifs(spawns){
   for (const {b, wait, slot} of spawns){
     if (!ROUTE_SET.has(b.z)) continue;
     const key = b.en + '@' + slot;
-    if (wait <= 5 && wait > 0 && !notified.has(key)){
+    if (wait <= 6 && wait > 0 && !notified.has(key)){   // margen: en 2º plano el navegador despierta ~1 vez/min
       notified.add(key);
       fireNotif('⚔️ ' + (isEn()?b.en:b.es),
         T(`Empieza en ${Math.ceil(wait)} min — ${b.z}`, `Starts in ${Math.ceil(wait)} min — ${b.z}`), key);
@@ -276,22 +294,35 @@ function slotHtml(slot, ch){
   return `<div class="eqslot ${old?'old':''}" data-slot="${slot}" style="border-color:${RARCOL[it.rarity]||'#666'}">` +
     `<img src="${it.icon}" alt="">${old?'<i class="warn">⚠</i>':''}</div>`;
 }
-function eqTipHtml(slot, ch){
-  const stxt = SLOT_TXT[slot] ? (isEn()?SLOT_TXT[slot].en:SLOT_TXT[slot].es) : slot;
-  const it = ACC.eq ? ACC.eq[slot] : null;
-  if (!it) return `<b>${stxt}</b><br><span class="dim">${T('Slot vacío','Empty slot')}</span>`;
+/* tooltip de objeto tipo juego: nombre por rareza, cantidad, daño/defensa, stats, descripción */
+function itemInfoHtml(it, opts){
+  opts = opts || {};
+  if (!it) return `<b>${opts.slotTxt||''}</b><br><span class="dim">${T('Slot vacío','Empty slot')}</span>`;
   const det = it.details || {};
+  const line2 = [opts.slotTxt, it.level ? 'nv '+it.level : null, it.rarity,
+                 (it.type||'') ].filter(Boolean).join(' · ');
   let h = `<b style="color:${RARCOL[it.rarity]||'#fff'}">${it.name}</b>` +
-    `<div class="dim">${stxt} · nv ${it.level||'—'} · ${it.rarity}</div>`;
+    (opts.count > 1 ? `<span class="qty">×${opts.count.toLocaleString(loc())}</span>` : '') +
+    `<div class="dim">${line2}</div>`;
   if (det.min_power) h += `<div>⚔ ${T('Daño','Damage')}: ${det.min_power}–${det.max_power}</div>`;
   if (det.defense)  h += `<div>🛡 ${T('Defensa','Defense')}: ${det.defense}</div>`;
   (((det.infix_upgrade)||{}).attributes||[]).forEach(a => {
     const at = ATTR_TXT[a.attribute]; h += `<div class="stat">+${a.modifier} ${at?(isEn()?at.en:at.es):a.attribute}</div>`;
   });
+  if (typeof it.vendor_value === 'number' && it.vendor_value > 0)
+    h += `<div class="dim" style="margin-top:4px">${T('Valor NPC','Vendor')}: ${coins(it.vendor_value)}${opts.count>1?' ('+T('unidad','each')+')':''}</div>`;
   const desc = (it.description||'').replace(/<[^>]*>/g,'').trim();
-  if (desc) h += `<div class="desc">${desc.slice(0,180)}</div>`;
-  const old = ch.level < 80 && it.level > 0 && it.level <= ch.level - 10;
-  if (old) h += `<div class="warn2">⚠ ${T('Desfasado: '+(ch.level-it.level)+' niveles por detrás — mira 🛒','Outdated: '+(ch.level-it.level)+' levels behind — check 🛒')}</div>`;
+  if (desc) h += `<div class="desc">${desc.slice(0,220)}</div>`;
+  return h;
+}
+function eqTipHtml(slot, ch){
+  const stxt = SLOT_TXT[slot] ? (isEn()?SLOT_TXT[slot].en:SLOT_TXT[slot].es) : slot;
+  const it = ACC.eq ? ACC.eq[slot] : null;
+  let h = itemInfoHtml(it, {slotTxt: stxt});
+  if (it){
+    const old = ch.level < 80 && it.level > 0 && it.level <= ch.level - 10;
+    if (old) h += `<div class="warn2">⚠ ${T('Desfasado: '+(ch.level-it.level)+' niveles por detrás — mira 🛒','Outdated: '+(ch.level-it.level)+' levels behind — check 🛒')}</div>`;
+  }
   return h;
 }
 function statsHtml(){
@@ -325,7 +356,7 @@ function gridHtml(entries){
   return `<div class="stgrid">` + rows.map(e => {
     const it = itemCache[e.id];
     return `<div class="stcell" style="border-color:${RARCOL[it.rarity]||'#555'}" ` +
-      `data-tip="${(it.name||'').replace(/"/g,'&quot;')} ×${e.count} · nv ${it.level||'—'} · ${it.rarity}">` +
+      `data-item="${e.id}" data-count="${e.count}">` +
       `<img src="${it.icon}" loading="lazy" alt=""><b>${e.count>1?e.count:''}</b></div>`;
   }).join('') + `</div>`;
 }
@@ -337,12 +368,12 @@ function loadStorage(kind){
   stgOpen = kind; renderStgTabs();
   box.innerHTML = `<p class="dim" style="font-size:12px">${T('Cargando…','Loading…')}</p>`;
   if (kind === 'mats'){
-    Promise.all([ api('/account/materials'), fetch(API+'/materials').then(r=>r.json()) ])
-      .then(([mats, catIds]) => {
-        const rows = mats.filter(m => m.count > 0);
-        return resolveItems(rows.map(r=>r.item_id)).then(() => {
-          const es = rows.map(r => ({id:r.item_id, count:r.count}));
-          box.innerHTML = `<div class="stcount">${rows.length} ${T('tipos de material · ','material types · ')}${rows.reduce((a,r)=>a+r.count,0).toLocaleString(loc())} ${T('en total','total')}</div>` + gridHtml(es);
+    api('/account/materials')
+      .then(mats => {
+        // OJO: /v2/account/materials devuelve el campo "id" (no "item_id")
+        const rows = mats.filter(m => m.count > 0).map(m => ({id: m.id || m.item_id, count: m.count}));
+        return resolveItems(rows.map(r=>r.id)).then(() => {
+          box.innerHTML = `<div class="stcount">${rows.length} ${T('tipos de material · ','material types · ')}${rows.reduce((a,r)=>a+r.count,0).toLocaleString(loc())} ${T('en total','total')}</div>` + gridHtml(rows);
         });
       }).catch(()=> box.innerHTML = `<p class="dim">${T('No se pudo (¿permiso inventories?)','Failed (inventories permission?)')}</p>`);
   } else if (kind === 'bank'){
@@ -492,7 +523,7 @@ document.addEventListener('mouseover', e => {
     const ch = ACC.chars.find(x => x.name === ACC.sel) || ACC.chars[0];
     t.innerHTML = eqTipHtml(s.dataset.slot, ch);
   } else if (c){
-    t.innerHTML = c.dataset.tip.replace(/ · /g, '<br>');
+    t.innerHTML = itemInfoHtml(itemCache[c.dataset.item], {count: +c.dataset.count || 1});
   } else { t.style.display = 'none'; return; }
   const anchor = s || c;
   t.style.display = 'block';
