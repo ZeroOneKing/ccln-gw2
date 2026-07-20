@@ -214,15 +214,36 @@ function accStatus(msg, err){
   if (el){ el.textContent = msg; el.style.color = err ? 'var(--skip)' : 'var(--vine)'; }
 }
 
-function loadAccount(){
+/* refresco automático: cada 5 min se vuelve a leer TODO de la API (nivel, equipo,
+   cartera y la vista de almacén abierta) sin tener que reentrar en la pestaña */
+const AUTO_MS = 300000;
+let lastSync = 0, autoTimer = null;
+function syncLabel(){
+  const el = $$('syncInfo');
+  if (!el) return;
+  if (!lastSync){ el.textContent = ''; return; }
+  const s = Math.round((Date.now() - lastSync)/1000);
+  const ago = s < 60 ? T(`hace ${s} s`, `${s}s ago`) : T(`hace ${Math.floor(s/60)} min`, `${Math.floor(s/60)}m ago`);
+  el.innerHTML = `🔄 ${T('Actualizado','Updated')} ${ago} · ${T('se refresca solo cada 5 min','auto-refreshes every 5 min')} ` +
+    `<button class="ghostBtn" id="syncNow" style="padding:3px 10px;font-size:11.5px">${T('Actualizar ya','Refresh now')}</button>`;
+}
+setInterval(syncLabel, 5000);
+function startAuto(){
+  if (autoTimer) clearInterval(autoTimer);
+  autoTimer = setInterval(() => { if (keyGet()) loadAccount(true); }, AUTO_MS);
+}
+
+function loadAccount(silent){
   if (!keyGet()){ paintAccount(); return; }
-  accStatus(T('Conectando con la API oficial…','Connecting to the official API…'));
+  if (!silent) accStatus(T('Conectando con la API oficial…','Connecting to the official API…'));
   Promise.all([ api('/account'), api('/characters?ids=all'), api('/account/wallet') ])
     .then(([acc, chars, wallet]) => {
+      const prevSel = ACC && ACC.sel;
       const w = {}; wallet.forEach(x => w[x.id] = x.value);
       chars.sort((a,b) => b.level - a.level);
+      const keepSel = prevSel && chars.some(c => c.name === prevSel) ? prevSel : (chars[0] ? chars[0].name : null);
       ACC = { name: acc.name, access: acc.access || [], chars, wallet: w,
-              sel: chars[0] ? chars[0].name : null, eq: null, stats: null };
+              sel: keepSel, eq: null, stats: null };
       achvUnlock('link');
       if ((w[2]||0) >= 50000) achvUnlock('karma50');
       if (chars.some(c => c.level >= 80)) achvUnlock('lv80');
@@ -232,8 +253,11 @@ function loadAccount(){
       document.body.classList.add(p2p ? 'p2p' : 'f2p');
       const mb = $$('modeBtn'); if (mb) mb.textContent = p2p ? '💎 P2P' : '🆓 F2P';
       accStatus('✓ ' + T('Conectado como','Connected as') + ' ' + acc.name + ' · ' + T('clave recordada en este navegador','key remembered in this browser'));
+      lastSync = Date.now();
       paintAccount();
       loadEquip();
+      if (stgOpen) loadStorage(stgOpen, true);   // refresca también la vista de almacén abierta
+      startAuto();
     })
     .catch(() => { accStatus(T('Clave rechazada o sin permisos (necesita: account, characters, wallet, inventories)','Key rejected or missing permissions (needs: account, characters, wallet, inventories)'), true); });
 }
@@ -337,62 +361,121 @@ function statsHtml(){
     }).join('') : `<div class="dim" style="font-size:12px">${T('Sin stats aún','No stats yet')}</div>`) + `</div>`;
 }
 
-/* ---- almacén: banco, materiales, bolsa del personaje (lazy) ---- */
-const itemCache = {};
-function resolveItems(ids){
-  const need = [...new Set(ids)].filter(id => id && !itemCache[id]);
+/* ---- almacén: banco, materiales, bolsa del personaje ----
+   Caché PERSISTENTE de objetos (por idioma) en localStorage: los datos de un ítem no
+   cambian, así que tras la 1ª vez la carga es instantánea y solo se piden los nuevos. */
+const CACHES = {es:{}, en:{}};
+const ckey = l => 'ccln-items-v2-' + l;
+['es','en'].forEach(l => { try { CACHES[l] = JSON.parse(localStorage.getItem(ckey(l)) || '{}'); } catch(e){ CACHES[l] = {}; } });
+const IC = () => CACHES[isEn() ? 'en' : 'es'];
+let cacheDirty = false;
+
+function trimItem(it){          // guardamos solo lo que pinta el tooltip (cabe mucho más)
+  const d = it.details || {};
+  const o = {i:it.id, n:it.name, c:it.icon, r:it.rarity, l:it.level, t:it.type, v:it.vendor_value};
+  if (it.description) o.d = it.description;
+  if (d.min_power) { o.mn = d.min_power; o.mx = d.max_power; }
+  if (d.defense) o.df = d.defense;
+  const at = (d.infix_upgrade||{}).attributes;
+  if (at && at.length) o.a = at.map(x => [x.attribute, x.modifier]);
+  return o;
+}
+function expand(o){             // vuelve al formato que usan los tooltips
+  if (!o) return null;
+  const det = {};
+  if (o.mn) { det.min_power = o.mn; det.max_power = o.mx; }
+  if (o.df) det.defense = o.df;
+  if (o.a) det.infix_upgrade = {attributes: o.a.map(([k,v]) => ({attribute:k, modifier:v}))};
+  return {id:o.i, name:o.n, icon:o.c, rarity:o.r, level:o.l, type:o.t,
+          vendor_value:o.v, description:o.d, details:det};
+}
+const CACHE_MAX = 4000;   // ~1 MB por idioma; el límite del navegador ronda los 5 MB
+function saveCache(){
+  if (!cacheDirty) return;
+  cacheDirty = false;
+  ['es','en'].forEach(l => {
+    const keys = Object.keys(CACHES[l]);
+    if (keys.length > CACHE_MAX){                       // recorta lo más antiguo
+      const keep = {}; keys.slice(-CACHE_MAX).forEach(k => keep[k] = CACHES[l][k]);
+      CACHES[l] = keep;
+    }
+    try { localStorage.setItem(ckey(l), JSON.stringify(CACHES[l])); }
+    catch(e){ try { localStorage.removeItem(ckey(l)); } catch(e2){} }  // cuota llena → se regenera
+  });
+}
+function resolveItems(ids, onProgress){
+  const cache = IC();
+  const need = [...new Set(ids)].filter(id => id && !cache[id]);
   if (!need.length) return Promise.resolve();
   const chunks = [];
-  for (let i=0; i<need.length; i+=180) chunks.push(need.slice(i, i+180));
+  for (let i=0; i<need.length; i+=200) chunks.push(need.slice(i, i+200));   // 200 = máximo de la API
+  let done = 0;
   return Promise.all(chunks.map(c =>
     fetch(API + '/items?ids=' + c.join(',') + '&lang=' + (isEn()?'en':'es'))
-      .then(r=>r.json()).then(arr => arr.forEach(it => itemCache[it.id] = it)).catch(()=>{})
-  ));
+      .then(r=>r.json())
+      .then(arr => { arr.forEach(it => { cache[it.id] = trimItem(it); }); cacheDirty = true; })
+      .catch(()=>{})
+      .then(()=>{ done++; if (onProgress) onProgress(done, chunks.length); })
+  )).then(saveCache);
 }
 function gridHtml(entries){
-  // entries: [{id,count}]
-  const rows = entries.filter(e => e && e.id && itemCache[e.id]);
-  if (!rows.length) return `<p class="dim" style="font-size:12px">${T('Vacío.','Empty.')}</p>`;
-  return `<div class="stgrid">` + rows.map(e => {
-    const it = itemCache[e.id];
-    return `<div class="stcell" style="border-color:${RARCOL[it.rarity]||'#555'}" ` +
+  // entries: [{id,count}] — pinta lo que ya está en caché y deja hueco al resto
+  const cache = IC();
+  if (!entries.length) return `<p class="dim" style="font-size:12px">${T('Vacío.','Empty.')}</p>`;
+  return `<div class="stgrid">` + entries.map(e => {
+    const o = cache[e.id];
+    if (!o) return `<div class="stcell pend" data-item="${e.id}" data-count="${e.count}"></div>`;
+    return `<div class="stcell" style="border-color:${RARCOL[o.r]||'#555'}" ` +
       `data-item="${e.id}" data-count="${e.count}">` +
-      `<img src="${it.icon}" loading="lazy" alt=""><b>${e.count>1?e.count:''}</b></div>`;
+      `<img src="${o.c}" loading="lazy" alt=""><b>${e.count>1?e.count:''}</b></div>`;
   }).join('') + `</div>`;
 }
 let stgOpen = null;
-function loadStorage(kind){
+const stgCache = {};   // últimas filas por tipo, para repintar sin volver a pedir
+
+/* pinta ya (con lo cacheado) y luego rellena lo que falte */
+function paintStorage(kind, rows, header){
+  const box = $$('storageBox');
+  if (!box || stgOpen !== kind) return Promise.resolve();
+  stgCache[kind] = {rows, header};
+  const cache = IC();
+  const missing = rows.filter(r => !cache[r.id]).length;
+  const bar = missing
+    ? `<div class="stload"><i></i>${T('cargando '+missing+' objetos nuevos…','loading '+missing+' new items…')}</div>` : '';
+  box.innerHTML = `<div class="stcount">${header}</div>` + bar + gridHtml(rows);
+  if (!missing) return Promise.resolve();
+  return resolveItems(rows.map(r => r.id)).then(() => {
+    if (stgOpen !== kind) return;
+    box.innerHTML = `<div class="stcount">${header}</div>` + gridHtml(rows);
+  });
+}
+function loadStorage(kind, silent){
   const box = $$('storageBox');
   if (!box) return;
-  if (stgOpen === kind){ stgOpen = null; box.innerHTML = ''; renderStgTabs(); return; }
+  if (!silent && stgOpen === kind){ stgOpen = null; box.innerHTML = ''; renderStgTabs(); return; }
   stgOpen = kind; renderStgTabs();
-  box.innerHTML = `<p class="dim" style="font-size:12px">${T('Cargando…','Loading…')}</p>`;
+  if (!silent && !stgCache[kind]) box.innerHTML = `<p class="dim" style="font-size:12px">${T('Cargando…','Loading…')}</p>`;
+  const fail = () => { if (stgOpen === kind) box.innerHTML = `<p class="dim">${T('No se pudo (¿permiso inventories?)','Failed (inventories permission?)')}</p>`; };
+
   if (kind === 'mats'){
-    api('/account/materials')
-      .then(mats => {
-        // OJO: /v2/account/materials devuelve el campo "id" (no "item_id")
-        const rows = mats.filter(m => m.count > 0).map(m => ({id: m.id || m.item_id, count: m.count}));
-        return resolveItems(rows.map(r=>r.id)).then(() => {
-          box.innerHTML = `<div class="stcount">${rows.length} ${T('tipos de material · ','material types · ')}${rows.reduce((a,r)=>a+r.count,0).toLocaleString(loc())} ${T('en total','total')}</div>` + gridHtml(rows);
-        });
-      }).catch(()=> box.innerHTML = `<p class="dim">${T('No se pudo (¿permiso inventories?)','Failed (inventories permission?)')}</p>`);
+    api('/account/materials').then(mats => {
+      // OJO: /v2/account/materials devuelve el campo "id" (no "item_id")
+      const rows = mats.filter(m => m.count > 0).map(m => ({id: m.id || m.item_id, count: m.count}));
+      const total = rows.reduce((a,r)=>a+r.count,0).toLocaleString(loc());
+      return paintStorage(kind, rows, `${rows.length} ${T('tipos de material · ','material types · ')}${total} ${T('en total','total')}`);
+    }).catch(fail);
   } else if (kind === 'bank'){
     api('/account/bank').then(bank => {
-      const rows = (bank||[]).filter(x => x);
-      return resolveItems(rows.map(r=>r.id)).then(() => {
-        box.innerHTML = `<div class="stcount">${rows.length} ${T('objetos en el banco','items in the bank')}</div>` +
-          gridHtml(rows.map(r => ({id:r.id, count:r.count})));
-      });
-    }).catch(()=> box.innerHTML = `<p class="dim">${T('No se pudo (¿permiso inventories?)','Failed (inventories permission?)')}</p>`);
+      const rows = (bank||[]).filter(x => x).map(r => ({id:r.id, count:r.count}));
+      return paintStorage(kind, rows, `${rows.length} ${T('objetos en el banco','items in the bank')}`);
+    }).catch(fail);
   } else if (kind === 'bag'){
     if (!ACC || !ACC.sel){ box.innerHTML=''; return; }
     api('/characters/' + encodeURIComponent(ACC.sel) + '/inventory').then(inv => {
       const items = [];
       (inv.bags||[]).forEach(bag => { if (bag) (bag.inventory||[]).forEach(it => { if (it) items.push({id:it.id, count:it.count}); }); });
-      return resolveItems(items.map(i=>i.id)).then(() => {
-        box.innerHTML = `<div class="stcount">${items.length} ${T('objetos en la bolsa de ','items in ')}${ACC.sel}</div>` + gridHtml(items);
-      });
-    }).catch(()=> box.innerHTML = `<p class="dim">${T('No se pudo (¿permiso inventories?)','Failed (inventories permission?)')}</p>`);
+      return paintStorage(kind, items, `${items.length} ${T('objetos en la bolsa de ','items in ')}${ACC.sel}`);
+    }).catch(fail);
   }
 }
 function renderStgTabs(){
@@ -475,6 +558,8 @@ function paintAccount(){
         </div>
         <p class="tfoot">${T('Pasa el ratón por cada slot · ⚠ = desfasado 10+ niveles','Hover each slot · ⚠ = 10+ levels outdated')}</p></div>
 
+      <div class="tile wide syncbar" id="syncInfo"></div>
+
       <div class="tile wide"><span class="tl">🏦 ${T('Almacén y bolsas — sin entrar al juego','Storage & bags — without opening the game')}</span>
         <div class="stbtns" id="storageTabs"></div>
         <div id="storageBox"></div></div>
@@ -488,6 +573,7 @@ function paintAccount(){
     </div>`;
 
   renderStgTabs();
+  syncLabel();
   const sel = $$('charSel');
   if (sel) sel.addEventListener('change', e => { ACC.sel = e.target.value; ACC.eq = null; ACC.stats = null; stgOpen = null; paintAccount(); loadEquip(); });
   const ap = $$('applyChar');
@@ -523,7 +609,7 @@ document.addEventListener('mouseover', e => {
     const ch = ACC.chars.find(x => x.name === ACC.sel) || ACC.chars[0];
     t.innerHTML = eqTipHtml(s.dataset.slot, ch);
   } else if (c){
-    t.innerHTML = itemInfoHtml(itemCache[c.dataset.item], {count: +c.dataset.count || 1});
+    t.innerHTML = itemInfoHtml(expand(IC()[c.dataset.item]), {count: +c.dataset.count || 1});
   } else { t.style.display = 'none'; return; }
   const anchor = s || c;
   t.style.display = 'block';
@@ -537,6 +623,7 @@ document.addEventListener('mouseout', e => {
 document.addEventListener('click', e => {
   const b = e.target.closest('.stbtn');
   if (b) loadStorage(b.dataset.stg);
+  if (e.target.closest('#syncNow')) loadAccount(true);
 });
 
 /* ---- formulario ---- */
