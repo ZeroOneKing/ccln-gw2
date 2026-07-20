@@ -35,11 +35,23 @@
   // botones del hero: saltar a una pestaña
   document.addEventListener('click', e => {
     const g = e.target.closest('[data-go]');
-    if (!g) return;
-    const tab = document.querySelector('#mainNav .tab[data-sec="' + g.dataset.go + '"]');
-    if (tab) tab.click();
-    window.scrollTo(0, 0);
+    if (g){
+      const tab = document.querySelector('#mainNav .tab[data-sec="' + g.dataset.go + '"]');
+      if (tab) tab.click();
+      window.scrollTo(0, 0);
+      return;
+    }
+    // cerrar / reabrir el panel explicativo del buscador
+    if (e.target.id === 'shopHelpX'){ shopHelp(false); try { localStorage.setItem('ccln-shophelp','0'); } catch(err){} }
+    if (e.target.closest && e.target.closest('#shopReopen')){ shopHelp(true); try { localStorage.setItem('ccln-shophelp','1'); } catch(err){} }
   });
+  function shopHelp(show){
+    const h = document.getElementById('shopHelp'), r = document.getElementById('shopReopen');
+    if (h) h.classList.toggle('hidden', !show);
+    if (r) r.classList.toggle('hidden', show);
+  }
+  // estado inicial del panel explicativo (por defecto abierto)
+  try { if (localStorage.getItem('ccln-shophelp') === '0') shopHelp(false); } catch(err){}
 
   apply();
 })();

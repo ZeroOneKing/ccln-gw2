@@ -418,6 +418,23 @@ i.b{color:#c08a5a;font-style:normal;font-size:10px}
 .leaflet-container{font:inherit}
 .leaflet-tooltip{background:rgba(10,8,6,.92);color:var(--txt);border:1px solid var(--line2);border-radius:8px}
 
+/* panel explicativo del buscador de karma */
+.shopHelp{position:relative;max-width:940px;margin:16px auto 0;
+  background:linear-gradient(100deg, rgba(255,157,31,.10), rgba(47,169,124,.07));
+  border:1px solid var(--line2);border-radius:14px;padding:14px 40px 14px 18px}
+.shopHelp.hidden{display:none}
+.shopHelp b{font-size:14.5px}
+.shopHelp p{color:#c2b8ab;font-size:13px;line-height:1.55;margin:6px 0}
+.shopHelp ol{margin:6px 0 0;padding-left:20px}
+.shopHelp li{color:#c2b8ab;font-size:12.8px;line-height:1.5;padding:2px 0}
+.shopHelp .dmg2{color:var(--acc2)}
+.shopHelpX{position:absolute;top:8px;right:10px;background:none;border:none;color:var(--dim);
+  font-size:22px;line-height:1;cursor:pointer;padding:2px 6px;border-radius:6px}
+.shopHelpX:hover{color:var(--acc);background:rgba(255,157,31,.12)}
+.shopReopen{display:inline-block;margin:10px auto 0;background:var(--panel);border:1px solid var(--line);
+  color:var(--dim);border-radius:99px;padding:5px 13px;font-size:12px;cursor:pointer;font-family:inherit}
+.shopReopen:hover{color:var(--acc);border-color:var(--line2)}
+
 /* pestaña/contenido solo P2P */
 body.f2p .p2ptab{display:none}
 
